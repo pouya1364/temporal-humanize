@@ -10,3 +10,12 @@ export interface RelativeTimeOptions {
   style?: 'long' | 'short' | 'narrow';
   numeric?: 'always' | 'auto';
 }
+
+export type DurationUnit = 'years' | 'months' | 'weeks' | 'days' | 'hours' | 'minutes' | 'seconds';
+
+export interface HumanizeDurationOptions {
+  largestUnit?: DurationUnit;
+  style?: 'long' | 'short';
+  locale?: LocaleInput;
+  maxUnits?: number;
+}

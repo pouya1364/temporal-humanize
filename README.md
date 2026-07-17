@@ -1,5 +1,10 @@
 # temporal-humanize
 
+[![npm version](https://img.shields.io/npm/v/temporal-humanize.svg)](https://www.npmjs.com/package/temporal-humanize)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/temporal-humanize)](https://bundlephobia.com/package/temporal-humanize)
+[![license](https://img.shields.io/npm/l/temporal-humanize.svg)](./LICENSE)
+[![downloads](https://img.shields.io/npm/dm/temporal-humanize.svg)](https://www.npmjs.com/package/temporal-humanize)
+
 Human-readable relative time formatting built on the [Temporal API](https://tc39.es/proposal-temporal/docs/).
 
 ## Install
@@ -22,13 +27,16 @@ npm install temporal-polyfill
 
 ```ts
 import { Temporal } from 'temporal-polyfill';
-import { fromNow, toNow } from 'temporal-humanize';
+import { fromNow, humanizeDuration, toNow } from 'temporal-humanize';
 
 const twoHoursAgo = Temporal.Now.instant().subtract({ hours: 2 });
 fromNow(twoHoursAgo); // "2 hours ago"
 
 const inThreeDays = Temporal.Now.instant().add({ hours: 72 });
 toNow(inThreeDays); // "in 3 days"
+
+const duration = Temporal.Duration.from({ days: 1, hours: 26, minutes: 5 });
+humanizeDuration(duration); // "2 days, 2 hours, 5 minutes"
 ```
 
 ## API
@@ -68,6 +76,53 @@ interface RelativeTimeOptions {
   `RangeError`.
 - `style` / `numeric` — forwarded to `Intl.RelativeTimeFormat`.
 
+### `humanizeDuration(duration, options?)`
+
+Formats a `Temporal.Duration` as a human-readable string. The magnitude is
+balanced up into a small ladder of units (years down to milliseconds) and
+capped to a handful of units by default, rounding the last unit shown.
+
+```ts
+function humanizeDuration(duration: Temporal.Duration, options?: HumanizeDurationOptions): string;
+```
+
+```ts
+const duration = Temporal.Duration.from({ hours: 3, minutes: 15 });
+humanizeDuration(duration); // "3 hours, 15 minutes"
+humanizeDuration(duration, { style: 'short' }); // "3h 15m"
+```
+
+### `HumanizeDurationOptions`
+
+```ts
+interface HumanizeDurationOptions {
+  largestUnit?: 'years' | 'months' | 'weeks' | 'days' | 'hours' | 'minutes' | 'seconds';
+  style?: 'long' | 'short';
+  locale?: string | readonly string[];
+  maxUnits?: number;
+}
+```
+
+- `largestUnit` — the unit to balance up to. If omitted, balancing defaults
+  to `'hours'` unless the duration's own fields already carry a non-zero
+  days/weeks/months/years value, in which case the largest such populated
+  field is used. Balancing into weeks/months/years uses a fixed-ratio
+  approximation (a week is 7 days, a month 30.44 days, a year 365.25 days) —
+  the same convention `fromNow`/`toNow` use for their unit thresholds —
+  since `Temporal.Duration` needs a `relativeTo` date to balance calendar
+  units exactly.
+- `style` — `'long'` uses `Intl.DurationFormat` when available (English-only
+  fallback otherwise); `'short'` always uses a compact renderer (`1d 2h 15m`)
+  regardless of `Intl.DurationFormat` support.
+- `locale` — passed through to `Intl.DurationFormat` (long style) and
+  `Intl.NumberFormat` (short style, for digit shaping).
+- `maxUnits` — the maximum number of units shown, defaulting to 3. Pass
+  `Infinity` to disable capping and render full precision down to
+  milliseconds.
+
+A negative duration is rendered with a single leading `-` on the whole
+string, e.g. `"-3 hours, 15 minutes"`, rather than negating each unit.
+
 ### PlainDateTime vs ZonedDateTime / Instant
 
 - `Temporal.PlainDateTime` is wall-clock time with no timezone attached.
@@ -82,5 +137,5 @@ interface RelativeTimeOptions {
 
 ## Roadmap
 
-`humanizeDuration` and calendar-relative formatting (e.g. "yesterday",
-"next Tuesday") are planned but not yet implemented.
+Calendar-relative formatting (e.g. "yesterday", "next Tuesday") is planned
+but not yet implemented.

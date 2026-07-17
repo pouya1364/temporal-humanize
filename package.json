@@ -36,6 +36,7 @@
     "temporal",
     "relative-time",
     "humanize",
+    "duration",
     "date",
     "time",
     "i18n",
