@@ -27,7 +27,7 @@ npm install temporal-polyfill
 
 ```ts
 import { Temporal } from 'temporal-polyfill';
-import { fromNow, humanizeDuration, toNow } from 'temporal-humanize';
+import { calendar, fromNow, humanizeDuration, toNow } from 'temporal-humanize';
 
 const twoHoursAgo = Temporal.Now.instant().subtract({ hours: 2 });
 fromNow(twoHoursAgo); // "2 hours ago"
@@ -37,6 +37,9 @@ toNow(inThreeDays); // "in 3 days"
 
 const duration = Temporal.Duration.from({ days: 1, hours: 26, minutes: 5 });
 humanizeDuration(duration); // "2 days, 2 hours, 5 minutes"
+
+const yesterday = Temporal.Now.zonedDateTimeISO().subtract({ days: 1 });
+calendar(yesterday); // "Yesterday at 3:00 PM"
 ```
 
 ## API
@@ -123,6 +126,72 @@ interface HumanizeDurationOptions {
 A negative duration is rendered with a single leading `-` on the whole
 string, e.g. `"-3 hours, 15 minutes"`, rather than negating each unit.
 
+### `calendar(value, options?)`
+
+Formats a Temporal value as a calendar-relative string — day.js's
+`calendar()` plugin, essentially: "Today at 3:00 PM", "Yesterday at 9:15
+AM", "Last Monday at 3:00 PM", "Wednesday at 3:00 PM" — falling back to a
+locale date string (e.g. "Jun 3, 2024") once the value is more than
+`thresholdDays` (6 by default) away from now.
+
+```ts
+function calendar(value: CalendarInput, options?: CalendarOptions): string;
+```
+
+`value` accepts `Temporal.ZonedDateTime` or `Temporal.PlainDateTime`
+(`Temporal.Instant` isn't accepted directly — convert it to a
+`ZonedDateTime` with a timezone first, since a calendar day only makes
+sense relative to a specific zone).
+
+```ts
+// output below varies with the current date/time and weekday
+const now = Temporal.Now.zonedDateTimeISO();
+calendar(now); // "Today at 3:00 PM"
+calendar(now.subtract({ days: 1 })); // "Yesterday at 3:00 PM"
+calendar(now.subtract({ days: 3 })); // "Last Sunday at 3:00 PM"
+calendar(now.subtract({ days: 30 })); // "Jun 17, 2026" (dateStyle 'medium')
+```
+
+### `CalendarOptions`
+
+```ts
+interface CalendarOptions {
+  locale?: string | readonly string[];
+  relativeTo?: Temporal.ZonedDateTime | Temporal.PlainDateTime;
+  timeFormat?: 'short' | 'medium' | 'long' | 'full';
+  thresholdDays?: number;
+}
+```
+
+- `locale` — passed through to `Intl.RelativeTimeFormat` (day word) and
+  `Intl.DateTimeFormat` (weekday, time, fallback date). Falls back to
+  English-only rendering for whichever formatter isn't available in the
+  runtime.
+- `relativeTo` — the reference point to compare against, instead of the
+  current moment. Must match the timezone-awareness of `value`: pairing a
+  `PlainDateTime` value with a `ZonedDateTime` `relativeTo` (or vice versa)
+  throws a `RangeError`.
+- `timeFormat` — maps to `Intl.DateTimeFormat`'s `timeStyle`. Defaults to
+  `'short'` (e.g. "3:00 PM").
+- `thresholdDays` — how many days away from now a value can be and still
+  get relative (day/weekday) phrasing instead of falling back to a plain
+  date string. Defaults to 6, applied symmetrically in both directions.
+
+For `Temporal.ZonedDateTime` input, "today" means today in **the value's
+own timezone** — `now` (or `relativeTo`) is converted into that zone before
+the day difference is computed, the same way `fromNow`/`toNow` treat
+`ZonedDateTime` as timezone-aware. For `Temporal.PlainDateTime` input,
+there's no timezone to convert into: "today" is whatever day `now` happens
+to be on as wall-clock time. The day boundary itself is always computed as
+plain calendar-date arithmetic, so DST transitions never shift which
+bucket a `ZonedDateTime` value lands in.
+
+The structural words "at" and "Last" render in English by default — only
+the day/weekday word and the time portion are localized through Intl. This
+package ships no built-in non-English glue words for these, but they can be
+overridden per locale — see [Adding a translation](#adding-a-translation)
+below.
+
 ### PlainDateTime vs ZonedDateTime / Instant
 
 - `Temporal.PlainDateTime` is wall-clock time with no timezone attached.
@@ -135,7 +204,81 @@ string, e.g. `"-3 hours, 15 minutes"`, rather than negating each unit.
   across DST transitions — the same wall-clock offset can resolve to a
   different elapsed duration depending on the zone's DST rules.
 
+## Adding a translation
+
+Most of what this package renders is already localized through `Intl` —
+day words, weekday names, times, numbers, and long-style duration wording
+all follow `options.locale` with no extra setup. A small number of
+structural "glue" strings aren't produced by any `Intl` formatter, though,
+and this package doesn't ship non-English wording for them: shipping and
+maintaining accurate translations for arbitrary locales is out of scope
+for a library this size, and getting it subtly wrong is worse than not
+having it. Instead, `registerLocale` lets any consumer — an app, or a
+separate npm package — supply exactly these strings for whichever locales
+it cares about.
+
+**What's registerable** (all fields optional, via `LocaleTranslations`):
+
+| Field                 | Default                             | Used by                                          |
+| --------------------- | ----------------------------------- | ------------------------------------------------ |
+| `now`                 | `'now'`                             | `fromNow`/`toNow`, zero-delta case               |
+| `calendarDay`         | `` (w, t) => `${w} at ${t}` ``      | `calendar()`, today/yesterday/tomorrow bucket    |
+| `calendarLastWeekday` | `` (w, t) => `Last ${w} at ${t}` `` | `calendar()`, last-week bucket                   |
+| `calendarWeekday`     | `` (w, t) => `${w} at ${t}` ``      | `calendar()`, next-week bucket                   |
+| `durationShortUnits`  | `{ y, mo, w, d, h, m, s, ms }`      | `humanizeDuration()`, short style, per unit      |
+| `durationShortJoin`   | `(parts) => parts.join(' ')`        | `humanizeDuration()`, short style, joining parts |
+
+Everything **not** in this table — the day/weekday word itself, the time
+portion, number formatting, and all of long-style duration wording — comes
+from `Intl` and is **not** overridable through this API; pass a `locale`
+to the relevant function as usual for those.
+
+```ts
+function registerLocale(locale: string, translations: Partial<LocaleTranslations>): void;
+function unregisterLocale(locale: string): void;
+function clearLocales(): void;
+function getRegisteredLocales(): string[];
+```
+
+- `registerLocale(locale, translations)` — registers translations for a
+  locale key. Calling it more than once for the same `locale` **merges**
+  with whatever was registered previously rather than replacing it, so
+  fields can be supplied incrementally across multiple calls without
+  clobbering earlier ones.
+- `unregisterLocale(locale)` — removes everything registered for a single
+  locale key. A no-op if nothing was registered for it.
+- `clearLocales()` — removes every registered locale, restoring English
+  defaults everywhere. Mainly useful for test teardown.
+- `getRegisteredLocales()` — returns the currently registered locale keys.
+
+Locale keys resolve the same way `Intl` locale matching intuitively
+suggests: a request for `'es-MX'` checks `'es-MX'` first, then falls back
+to the base language subtag `'es'` if `'es-MX'` itself isn't registered.
+The same applies to each entry when `locale` is an array.
+
+The example below uses only placeholder text — swap `'<...>'` for whatever
+your own locale's wording should be; this package intentionally doesn't
+suggest real translations:
+
+```ts
+import { registerLocale } from 'temporal-humanize';
+
+registerLocale('xx', {
+  now: '<your now word>',
+  calendarDay: (dayWord, time) => `${dayWord} <at> ${time}`,
+  calendarLastWeekday: (weekday, time) => `<last> ${weekday} <at> ${time}`,
+  calendarWeekday: (weekday, time) => `${weekday} <at> ${time}`,
+  durationShortUnits: { hours: '<h>' },
+  durationShortJoin: (parts) => parts.join(' '),
+});
+```
+
+`registerLocale`/`unregisterLocale`/`clearLocales`/`getRegisteredLocales`
+are named exports the rest of the package never calls internally on your
+behalf — if an app never imports them, a bundler can tree-shake them away
+entirely (this package sets `"sideEffects": false` and ships only named
+exports).
+
 ## Roadmap
 
-Calendar-relative formatting (e.g. "yesterday", "next Tuesday") is planned
-but not yet implemented.
+Nothing currently planned beyond what's documented above.

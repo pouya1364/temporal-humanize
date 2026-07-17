@@ -1,6 +1,7 @@
 import type { LocaleInput } from '../types.js';
 import type { DurationPart } from './duration-balance.js';
 import { formatDurationEnFallback } from './duration-fallback-en.js';
+import { resolveField } from './locale-registry.js';
 
 // Intl.DurationFormat isn't part of TypeScript's lib.es* declarations yet
 // (as of TS 5.6), so this is a narrow local type covering only the surface
@@ -62,10 +63,16 @@ function toPlainFields(parts: readonly DurationPart[]): Record<string, number> {
 function formatShort(parts: readonly DurationPart[], locale: LocaleInput | undefined): string {
   const localeArg = Array.isArray(locale) ? [...locale] : locale;
   const numberFormat = new Intl.NumberFormat(localeArg);
+  const registeredUnits = resolveField(locale, 'durationShortUnits', {});
 
-  return parts
-    .map(({ unit, value }) => `${numberFormat.format(value)}${SHORT_UNIT_ABBREVIATIONS[unit]}`)
-    .join(' ');
+  const rendered = parts.map(({ unit, value }) => {
+    const abbreviation = registeredUnits[unit] ?? SHORT_UNIT_ABBREVIATIONS[unit];
+    return `${numberFormat.format(value)}${abbreviation}`;
+  });
+
+  return resolveField(locale, 'durationShortJoin', (joinParts: readonly string[]) =>
+    joinParts.join(' '),
+  )(rendered);
 }
 
 export interface FormatDurationPartsOptions {

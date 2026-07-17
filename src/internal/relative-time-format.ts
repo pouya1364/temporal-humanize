@@ -1,5 +1,6 @@
 import type { LocaleInput } from '../types.js';
 import { formatEnFallback } from './fallback-en.js';
+import { resolveField } from './locale-registry.js';
 import type { RelativeUnit } from './unit-select.js';
 
 const HAS_RTF = typeof Intl !== 'undefined' && typeof Intl.RelativeTimeFormat === 'function';
@@ -35,8 +36,9 @@ export interface FormatUnitOptions {
 /**
  * Formats a signed value/unit pair using `Intl.RelativeTimeFormat` when
  * available, falling back to English-only phrasing otherwise. A value of
- * 0 always renders as "now" rather than relying on RTF's zero-format
- * wording, which varies across engines.
+ * 0 always renders as "now" (or its registered translation, see
+ * `registerLocale`) rather than relying on RTF's zero-format wording,
+ * which varies across engines.
  *
  * @example
  * ```ts
@@ -46,7 +48,7 @@ export interface FormatUnitOptions {
  * ```
  */
 export function formatUnit(value: number, unit: RelativeUnit, opts: FormatUnitOptions): string {
-  if (value === 0) return 'now';
+  if (value === 0) return resolveField(opts.locale, 'now', 'now');
 
   if (!HAS_RTF) return formatEnFallback(value, unit);
 
