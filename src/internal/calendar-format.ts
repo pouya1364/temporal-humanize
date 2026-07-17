@@ -83,7 +83,11 @@ export function formatTime(
     .filter((part) => part.type !== 'timeZoneName')
     .map((part) => part.value)
     .join('')
-    .trimEnd();
+    .trimEnd()
+    // Newer ICU versions render a narrow no-break space (U+202F) before the
+    // AM/PM marker instead of a plain space; normalize so output is stable
+    // across Node/ICU versions.
+    .replace(/[  ]/g, ' ');
 }
 
 /**
