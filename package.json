@@ -1,6 +1,6 @@
 {
   "name": "temporal-humanize",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Human-readable relative time formatting built on the Temporal API",
   "type": "module",
   "main": "dist/index.cjs",
